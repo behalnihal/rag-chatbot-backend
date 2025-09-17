@@ -4,6 +4,8 @@ import { QdrantClient } from "@qdrant/js-client-rest";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import https from "node:https";
 import cors from "cors";
+import redis from "redis";
+import { v4 } from "uuid";
 dotenv.config();
 
 const app = express();
@@ -13,6 +15,7 @@ const COLLECTION_NAME = "news_articles";
 const qdrantClient = new QdrantClient({ url: "http://localhost:6333" });
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const redisClient = redis.createClient();
 
 // Middleware
 app.use(cors());
@@ -97,11 +100,18 @@ app.get("/", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
 app.post("/api/chat", async (req, res) => {
-  const { query } = req.body;
+  let { query, sessionId } = req.body;
 
   if (!query) {
     return res.status(400).json({ error: "Query is required" });
   }
+
+  if (!sessionId) {
+    sessionId = v4();
+    console.log(`New session created: ${sessionId}`);
+  }
+
+  const historyKey = `chat_history:${sessionId}`;
 
   try {
     console.log("Embedding query...", query);
@@ -132,12 +142,16 @@ app.post("/api/chat", async (req, res) => {
     const result = await geminiModel.generateContent(prompt);
     const response = await result.response;
     const finalAnswer = response.text();
-    console.log("Gemini Answer:", finalAnswer);
 
-    res.json({
-      answer: finalAnswer,
-      context: searchResponse.map((r) => r.payload),
-    });
+    // save convo to redis
+    const userMessage = { sender: "user", text: query };
+    const botMessage = { sender: "bot", text: finalAnswer };
+    // using RPUSH to add to the end of list
+    await redisClient.rPush(historyKey, JSON.stringify(userMessage));
+    await redisClient.rPush(historyKey, JSON.stringify(botMessage));
+
+    // return response with sessionId
+    res.json({ answer: finalAnswer, sessionId: sessionId });
   } catch (error) {
     console.error("Error processing RAG pipeline:", error);
     res
@@ -146,6 +160,39 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Backend server is running on http://localhost:${port}`);
+// get history
+app.get("/api/history/:sessionId", async (req, res) => {
+  const { sessionId } = req.params;
+  const historyKey = `chat_history:${sessionId}`;
+  try {
+    const history = await redisClient.lRange(historyKey, 0, -1);
+    const messages = history.map((item) => JSON.parse(item));
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error fetching chat history:", error);
+    res.status(500).json({ error: "Failed to fetch history." });
+  }
 });
+
+// clear session
+app.post("/api/clear/:sessionId", async (req, res) => {
+  const { sessionId } = req.params;
+  const historyKey = `chat_history:${sessionId}`;
+  try {
+    await redisClient.del(historyKey);
+    res.json({ message: "Session cleared successfully." });
+  } catch (error) {
+    console.error("Error clearing session:", error);
+    res.status(500).json({ error: "Failed to clear session." });
+  }
+});
+
+// start server
+const startServer = async () => {
+  await redisClient.connect();
+  console.log("Connected to Redis");
+  app.listen(port, () => {
+    console.log(`Backend server is running on http://localhost:${port}`);
+  });
+};
+startServer();
