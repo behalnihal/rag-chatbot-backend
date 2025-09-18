@@ -9,7 +9,11 @@ dotenv.config();
 const CORPUS_FILE = "corpus.json";
 const COLLECTION_NAME = "news_articles";
 
-const qdrantClient = new QdrantClient({ url: "http://localhost:6333" });
+const qdrantUrl = process.env.QDRANT_URL || "http://localhost:6333";
+const qdrantClient = new QdrantClient({
+  url: qdrantUrl,
+  apiKey: process.env.QDRANT_API_KEY,
+});
 
 // call Jina embeddings via raw HTTPS (ESM)
 const requestJinaEmbeddings = (texts) =>

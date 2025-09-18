@@ -9,13 +9,24 @@ import { v4 } from "uuid";
 dotenv.config();
 
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
 const COLLECTION_NAME = "news_articles";
 
-const qdrantClient = new QdrantClient({ url: "http://localhost:6333" });
+const qdrantUrl = process.env.QDRANT_URL || "http://localhost:6333";
+const qdrantClient = new QdrantClient({
+  url: qdrantUrl,
+  apiKey: process.env.QDRANT_API_KEY,
+});
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-const redisClient = redis.createClient();
+const redisClient = redis.createClient({
+  username: "default",
+  password: process.env.REDIS_PASSWORD,
+  socket: {
+    host: process.env.REDIS_HOST,
+    port: process.env.REDIS_PORT,
+  },
+});
 
 // Middleware
 app.use(cors());

@@ -83,6 +83,7 @@ const ingestData = async () => {
           console.log(
             `- Success! Added article #${articles.length}. Title: ${item.title}`
           );
+          break;
         }
       } catch (error) {
         // Silently fail on individual article errors to keep the log clean

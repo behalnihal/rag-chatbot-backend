@@ -5,6 +5,10 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "start": "node index.js",
+    "start:prod": "NODE_ENV=production node index.js",
+    "ingest": "node ingest.js",
+    "embed": "node embed.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
